@@ -248,3 +248,9 @@ dialog.wide { width: min(920px, calc(100vw - 24px)); }
 .notice ul { margin: 6px 0 0; padding-left: 18px; }
 .field textarea[readonly] { background: var(--board); }
 details summary { cursor: pointer; margin-top: 4px; }
+
+/* Outreach rows in the application dialog */
+.orow { display: grid; grid-template-columns: 1.3fr .8fr 1.3fr auto auto .8fr; gap: 6px; align-items: end; margin-bottom: 6px; }
+.orow input, .orow select { border: 1px solid var(--rule); background: var(--board); border-radius: var(--radius); padding: 6px 8px; min-width: 0; font-size: .88rem; }
+.orow .mini { display: flex; flex-direction: column; font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-soft); gap: 2px; }
+@media (max-width: 760px) { .orow { grid-template-columns: 1fr 1fr; } .orow > input:first-child { grid-column: 1 / -1; } }

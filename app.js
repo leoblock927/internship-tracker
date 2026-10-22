@@ -315,7 +315,8 @@ function counts() {
   const p = S.data.pipeline.items.filter(j => pipeStatus(j.id) === 'New').length;
   const a = S.data.applications.items.filter(x => x.status === 'In Progress').length;
   $('#c-pipeline').textContent = p ? ` ${p}` : '';
-  $('#c-applications').textContent = ` ${a}`;
+  const due = allDue().length;
+  $('#c-applications').textContent = ` ${a}${due ? ` · ${due} due` : ''}`;
   $('#c-waiting').textContent = ` ${S.data.waiting.items.length}`;
 }
 
@@ -421,7 +422,7 @@ function viewApplications() {
   const f = S.prefs.appFilter;
   const [sk, dir] = S.prefs.appSort;
   const list = items
-    .filter(a => f === 'All' || (f === 'Follow up' ? !!a.nextStep && a.status === 'In Progress' : a.status === f))
+    .filter(a => f === 'All' || (f === 'Follow up' ? a.status === 'In Progress' && (!!a.nextStep || dueOutreach(a).length > 0) : a.status === f))
     .filter(a => matchesQ(a.company, a.role, a.stage, a.status, a.location, a.contact, a.notes, a.nextStep, a.industry, a.source))
     .sort((a, b) => dir * String(a[sk] || '').localeCompare(String(b[sk] || ''), undefined, { numeric: true }) || String(b.dateApplied).localeCompare(String(a.dateApplied)));
   const head = toolbar('Applications', `${items.length} total, ${items.filter(a => a.status === 'In Progress').length} in progress`,
@@ -436,7 +437,7 @@ function viewApplications() {
     <td data-l="Status">${esc(a.status)}</td>
     <td data-l="Applied" style="white-space:nowrap">${esc(a.dateApplied)}</td>
     <td data-l="Location" class="clip">${esc(a.location)}</td>
-    <td data-l="Contact" class="clip">${esc(a.contact)}</td>
+    <td data-l="Contact" class="clip">${esc(a.contact)}${(a.outreach || []).length ? `<div class="sub">${a.outreach.length} contacted${dueOutreach(a).length ? ` · <span style="color:var(--hv);font-weight:700">${dueOutreach(a).length} follow-up due</span>` : ''}</div>` : ''}</td>
     <td data-l="Next" class="clip">${esc(a.nextStep)}</td>
     <td data-l="Notes" class="clip">${esc(a.notes)}</td>
   </tr>`).join('');
@@ -495,6 +496,7 @@ function viewSummary() {
   }
   const wmax = Math.max(1, ...weeks.map(w => w.n));
   const followups = apps.filter(a => a.nextStep && a.status === 'In Progress');
+  const dueList = allDue();
   const pipe = S.data.pipeline.items;
   const stageOrder = (S.data.options.stage || []);
   return `<div class="toolbar"><h2>Summary<small>${esc(apps.length)} applications, ${esc(companies)} companies</small></h2></div>
@@ -511,8 +513,19 @@ function viewSummary() {
       <div class="panel"><h3>By stage</h3>${bars(by('stage'), k => STAGE_WIRE[k], stageOrder.length ? stageOrder.concat(Object.keys(by('stage')).filter(k => !stageOrder.includes(k))) : null)}</div>
       <div class="panel"><h3>By industry</h3>${bars(by('industry'), () => 'auto')}</div>
       <div class="panel"><h3>By source</h3>${bars(by('source'), () => 'hv')}</div>
-      <div class="panel"><h3>Follow-ups (${followups.length})</h3>${followups.length ? `<ul class="list">${followups.map(a => `<li><b>${esc(a.company)}</b>: ${esc(a.nextStep)}</li>`).join('')}</ul>` : '<p class="meta">Nothing waiting on you.</p>'}</div>
+      <div class="panel"><h3>Follow-ups due (${dueList.length + followups.length})</h3>${dueList.length + followups.length ? `<ul class="list">${dueList.map(({ a, o }) => `<li data-act="app-edit" data-id="${esc(a.id)}" style="cursor:pointer"><b>${esc(a.company)}</b>: follow up with ${esc(o.name)} (${esc(o.channel)}, sent ${esc(o.sentOn)})</li>`).join('')}${followups.map(a => `<li data-act="app-edit" data-id="${esc(a.id)}" style="cursor:pointer"><b>${esc(a.company)}</b>: ${esc(a.nextStep)}</li>`).join('')}</ul>` : '<p class="meta">Nothing waiting on you.</p>'}</div>
+      <div class="panel"><h3>Outreach</h3>${outreachStats()}</div>
     </div>`;
+}
+
+function outreachStats() {
+  const all = S.data.applications.items.flatMap(a => a.outreach || []);
+  if (!all.length) return '<p class="meta">No outreach logged yet. Open an application and add who you contacted.</p>';
+  const c = s => all.filter(o => o.status === s).length;
+  const replied = c('Replied') + c('Referred');
+  return `<div class="barrow"><span>Contacted</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="num">${all.length}</span></div>
+    <div class="barrow" style="--wire:var(--can)"><span>Replied or referred</span><div class="track"><div class="fill" style="width:${(replied / all.length) * 100}%"></div></div><span class="num">${replied}</span></div>
+    <div class="barrow" style="--wire:var(--hv)"><span>Waiting</span><div class="track"><div class="fill" style="width:${(c('Sent') / all.length) * 100}%"></div></div><span class="num">${c('Sent')}</span></div>`;
 }
 
 /* ---------- dialogs ---------- */
@@ -559,6 +572,44 @@ function appForm(a, extra = '') {
 }
 const APP_KEYS = ['company', 'role', 'stage', 'status', 'dateApplied', 'industry', 'source', 'portal', 'location', 'contact', 'nextStep', 'notes', 'url'];
 const pickApp = fd => Object.fromEntries(APP_KEYS.map(k => [k, (fd[k] || '').trim()]));
+
+/* ---------- outreach log ---------- */
+const OUT_CHANNELS = ['Email', 'LinkedIn', 'In person', 'Referral ask', 'Other'];
+const OUT_STATUS = ['Sent', 'Replied', 'Referred', 'No reply', 'Not sent yet'];
+const addDays = (iso, n) => { const d = new Date(`${iso}T12:00:00`); if (isNaN(d)) return ''; d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+const dueOutreach = a => (a.outreach || []).filter(o => o.status === 'Sent' && o.followUpOn && o.followUpOn <= today());
+function allDue() {
+  return S.data.applications.items.filter(a => a.status === 'In Progress').flatMap(a => dueOutreach(a).map(o => ({ a, o })));
+}
+function outreachRow(o, key) {
+  const n = k => `o_${key}_${k}`;
+  const sel = (name, list, v) => `<select name="${name}" aria-label="${name}">${list.map(x => `<option ${x === v ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>`;
+  return `<div class="orow">
+    <input name="${n('name')}" value="${esc(o.name || '')}" placeholder="${key === 'new' ? 'Add a person (name, role)' : 'Name'}" aria-label="Contact name">
+    ${sel(n('channel'), OUT_CHANNELS, o.channel || 'Email')}
+    <input name="${n('handle')}" value="${esc(o.handle || '')}" placeholder="Email or profile link" aria-label="Email or profile">
+    <label class="mini">Sent<input type="date" name="${n('sentOn')}" value="${esc(o.sentOn || (key === 'new' ? today() : ''))}"></label>
+    <label class="mini">Follow up<input type="date" name="${n('followUpOn')}" value="${esc(o.followUpOn || '')}"></label>
+    ${sel(n('status'), OUT_STATUS, o.status || 'Sent')}
+  </div>`;
+}
+function outreachSection(a) {
+  const list = a.outreach || [];
+  return `<div class="field full"><label>Outreach (${list.length})</label>
+    <p class="meta" style="margin:0 0 6px">People you've contacted about this role. Clear a name to remove that row. Follow-up defaults to a week after sending.</p>
+    ${list.map((o, i) => outreachRow(o, i)).join('')}${outreachRow({}, 'new')}</div>`;
+}
+function pickOutreach(fd, prev = []) {
+  const read = key => ({
+    name: (fd[`o_${key}_name`] || '').trim(), channel: fd[`o_${key}_channel`], handle: (fd[`o_${key}_handle`] || '').trim(),
+    sentOn: fd[`o_${key}_sentOn`] || '', followUpOn: fd[`o_${key}_followUpOn`] || '', status: fd[`o_${key}_status`],
+  });
+  const out = [];
+  prev.forEach((o, i) => { const r = read(i); if (r.name) out.push({ ...o, ...r }); });
+  const fresh = read('new');
+  if (fresh.name) out.push({ id: uid('o'), ...fresh, followUpOn: fresh.followUpOn || (fresh.status === 'Sent' && fresh.sentOn ? addDays(fresh.sentOn, 7) : '') });
+  return out;
+}
 
 async function addApplication(app, why) {
   const item = { id: uid('a'), ...app };
@@ -749,16 +800,18 @@ const ACTIONS = {
     });
   },
   async 'app-new'() {
-    openDialog({ title: 'Add application', body: appForm({}), onSave: async fd => { await addApplication(pickApp(fd), 'add'); render(); toast('Added.'); } });
+    openDialog({ title: 'Add application', body: appForm({}, outreachSection({})), onSave: async fd => { await addApplication({ ...pickApp(fd), outreach: pickOutreach(fd) }, 'add'); render(); toast('Added.'); } });
   },
   async 'app-edit'(el) {
     const a = S.data.applications.items.find(x => x.id === el.dataset.id);
     if (!a) return;
     openDialog({
       title: `${a.company}`,
-      body: appForm(a),
+      body: appForm(a, outreachSection(a)),
+      wide: true,
       onSave: async fd => {
-        S.data.applications = await updateFile(FILES.applications, d => ({ ...d, items: d.items.map(x => (x.id === a.id ? { ...x, ...pickApp(fd) } : x)) }), `Tracker: update ${a.company}`);
+        const outreach = pickOutreach(fd, a.outreach || []);
+        S.data.applications = await updateFile(FILES.applications, d => ({ ...d, items: d.items.map(x => (x.id === a.id ? { ...x, ...pickApp(fd), outreach } : x)) }), `Tracker: update ${a.company}`);
         render(); toast('Saved.');
       },
       onDelete: async () => {
@@ -960,7 +1013,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && S.
 /* ---------- demo data (fictional, for previewing the layout only) ---------- */
 const DEMO_DATA = {
   [FILES.applications]: { items: [
-    { id: 'a-1', company: 'Northwind Aero', role: 'Electrical Integration Intern', industry: 'Aerospace', source: 'Career Expo', dateApplied: '2026-10-14', stage: 'Interview', status: 'In Progress', location: 'Denver, CO', portal: 'Greenhouse', contact: 'Recruiter screen done', nextStep: 'Panel interview Friday', notes: 'Asked about harness work' },
+    { id: 'a-1', company: 'Northwind Aero', role: 'Electrical Integration Intern', industry: 'Aerospace', source: 'Career Expo', dateApplied: '2026-10-14', stage: 'Interview', status: 'In Progress', location: 'Denver, CO', portal: 'Greenhouse', contact: 'Recruiter screen done', nextStep: 'Panel interview Friday', notes: 'Asked about harness work', outreach: [{ id: 'o-1', name: 'Sample Engineer (integration)', channel: 'Email', handle: '', sentOn: '2026-10-10', followUpOn: '2026-10-17', status: 'Sent' }, { id: 'o-2', name: 'Sample Recruiter', channel: 'LinkedIn', handle: '', sentOn: '2026-10-11', followUpOn: '', status: 'Replied' }] },
     { id: 'a-2', company: 'Bluefin Motorsport', role: 'Electronics Intern', industry: 'Motorsports', source: 'LinkedIn', dateApplied: '2026-10-02', stage: 'Applied', status: 'In Progress', location: 'Charlotte, NC', portal: 'Workday', contact: '', nextStep: '', notes: '' },
     { id: 'a-3', company: 'Orbital Example Co', role: 'Avionics Test Intern', industry: 'Aerospace', source: '#careers', dateApplied: '2026-09-20', stage: 'Rejected', status: 'Rejected', location: 'Los Angeles, CA', portal: 'Lever', contact: '', nextStep: '', notes: 'Rejected 10/1' },
   ] },
