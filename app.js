@@ -12,7 +12,10 @@ const FILES = {
   control: 'data/control.json',
   options: 'data/options.json',
   lastRun: 'data/last-run.json',
+  resume: 'config/resume.json',
+  packetReq: 'data/packet-requests.json',
 };
+const packetName = id => `${String(id).replace(/[^a-z0-9]+/gi, '_').slice(0, 120)}.json`;
 const ENC_KEY = 'tracker.enc.v1';        // localStorage: encrypted token
 const SESSION_KEY = 'tracker.session.v1'; // sessionStorage: token for this tab only
 const PREF_KEY = 'tracker.prefs.v1';
@@ -129,6 +132,27 @@ async function dispatch(workflow, inputs) {
   if (res.status !== 204) throw new Error(`Couldn't start the run (${res.status}). The token needs Actions: Read and write.`);
 }
 
+async function listPackets() {
+  S.packetCache ||= {};
+  if (DEMO) { S.packets = new Set(Object.keys(DEMO_PACKETS)); return; }
+  try {
+    const res = await gh(repoPath(`/contents/data/packets?ref=${CFG.branch}&t=${Date.now()}`));
+    if (!res.ok) { S.packets = new Set(); return; }
+    const list = await res.json();
+    S.packets = new Set(list.filter(f => f.name.endsWith('.json')).map(f => f.name));
+    // Drop cached packets whose file changed (rebuilt).
+    for (const f of list) if (S.packetCache[f.name] && S.packetCache[f.name]._sha !== f.sha) delete S.packetCache[f.name];
+    S.packetShas = Object.fromEntries(list.map(f => [f.name, f.sha]));
+  } catch { S.packets = new Set(); }
+}
+async function getPacket(id) {
+  const name = packetName(id);
+  if (S.packetCache[name]) return S.packetCache[name];
+  const { data } = DEMO ? { data: structuredClone(DEMO_PACKETS[name]) } : await readFile(`data/packets/${name}`);
+  if (data) { data._sha = S.packetShas?.[name]; S.packetCache[name] = data; }
+  return data;
+}
+
 async function loadRuns() {
   if (DEMO) { S.runs = []; return; }
   try {
@@ -149,7 +173,8 @@ async function loadAll() {
   S.data.status ??= { items: {} };
   S.data.control ??= { paused: false };
   S.data.options ??= {};
-  await loadRuns();
+  S.data.packetReq ??= { items: {} };
+  await Promise.all([loadRuns(), listPackets()]);
   setFoot(`Loaded ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`);
   render();
   watchRuns();
@@ -312,7 +337,10 @@ function renderTitleBlock() {
   const paused = !!S.data.control?.paused;
   const active = S.runs.find(r => r.status !== 'completed');
   const st = $('#scanstate');
-  if (active) { st.className = 'state busy'; st.textContent = `${active.name.replace('Daily internship ', '').replace('Detect job boards', 'Detecting boards')} ${active.status === 'queued' ? 'queued' : 'running'}`; }
+  if (active) {
+    const label = { 'Daily internship scan': 'Scan', 'Detect job boards': 'Detecting boards', 'Build application packets': 'Building packets' }[active.name] || active.name;
+    st.className = 'state busy'; st.textContent = `${label} ${active.status === 'queued' ? 'queued' : 'running'}`;
+  }
   else if (paused) { st.className = 'state paused'; st.textContent = 'Paused'; }
   else { st.className = 'state on'; st.textContent = 'Active'; }
   const pb = $('#pausebtn');
@@ -360,21 +388,25 @@ function pipeCard(j) {
   const flags = (j.flags || []).map(f => `<span class="chip ${/defense/.test(f) ? 'hv' : /clearance|differs/.test(f) ? 'batt' : ''}">${esc(f)}</span>`).join('');
   const terms = (j.terms || []).map(t => `<span class="chip">${esc(t)}</span>`).join('');
   const stChip = st !== 'New' ? `<span class="chip ${st === 'Approved' ? 'can' : st === 'Applied' ? 'auto' : ''}">${esc(st)}</span>` : '';
+  const hasPacket = S.packets?.has(packetName(j.id));
+  const building = !hasPacket && st === 'Approved' && S.runs.some(r => r.name === 'Build application packets' && r.status !== 'completed');
+  const packetChip = st === 'Approved' && !hasPacket ? `<span class="chip">${building ? 'building packet...' : 'packet pending'}</span>` : '';
+  const packetBtn = hasPacket ? `<button class="btn small" data-act="packet-open" data-id="${esc(j.id)}">Open packet</button>` : '';
   const acts = st === 'New'
     ? `<button class="btn small go" data-act="pipe-approve" data-id="${esc(j.id)}">Approve</button>
        <button class="btn small" data-act="pipe-applied" data-id="${esc(j.id)}">Applied</button>
        <button class="btn small" data-act="pipe-skip" data-id="${esc(j.id)}">Skip</button>`
     : st === 'Approved'
-      ? `<button class="btn small primary" data-act="pipe-applied" data-id="${esc(j.id)}">Mark applied</button>
+      ? `${packetBtn}<button class="btn small primary" data-act="pipe-applied" data-id="${esc(j.id)}">Mark applied</button>
          <button class="btn small" data-act="pipe-undo" data-id="${esc(j.id)}">Undo</button>`
-      : `<button class="btn small" data-act="pipe-undo" data-id="${esc(j.id)}">Move back to New</button>`;
+      : `${packetBtn}<button class="btn small" data-act="pipe-undo" data-id="${esc(j.id)}">Move back to New</button>`;
   return `<article class="card" style="--wire:${wireVar(scoreWire(j))}">
     <div class="score">${sc == null ? '-' : (j.score == null ? '~' : '') + esc(sc)}<small>${j.score == null ? 'keyword' : 'fit'}</small></div>
     <div>
       <h3>${url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(j.title)}</a>` : esc(j.title)}</h3>
       <div class="meta"><b>${esc(j.company)}</b> · ${esc((j.locations || []).slice(0, 2).join('; ') || 'Location not listed')} · found ${esc(j.dateFound || '')}</div>
       ${(j.reasons || []).length ? `<ul class="reasons">${j.reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}
-      <div class="chips">${stChip}${terms}${flags}</div>
+      <div class="chips">${stChip}${packetChip}${terms}${flags}</div>
     </div>
     <div class="acts">${acts}</div>
   </article>`;
@@ -493,11 +525,12 @@ function field(name, label, value, { type = 'text', list, select, full, required
   else input = `<input id="${id}" name="${name}" type="${type}" value="${esc(value)}" ${list ? `list="dl-${name}"` : ''} ${required ? 'required' : ''}>${list ? `<datalist id="dl-${name}">${list.map(o => `<option value="${esc(o)}">`).join('')}</datalist>` : ''}`;
   return `<div class="field ${full ? 'full' : ''}"><label for="${id}">${esc(label)}</label>${input}</div>`;
 }
-function openDialog({ title, body, onSave, onDelete, saveLabel = 'Save' }) {
+function openDialog({ title, body, onSave, onDelete, saveLabel = 'Save', wide = false, noSave = false }) {
   const dlg = $('#dlg');
+  dlg.classList.toggle('wide', wide);
   $('#dlgform').innerHTML = `<div class="dhead"><h3>${esc(title)}</h3><button class="iconbtn" value="cancel" formnovalidate aria-label="Close">✕</button></div>
     <div class="dbody">${body}</div>
-    <div class="dfoot">${onDelete ? '<button type="button" class="btn danger left" id="dlgdel">Delete</button>' : ''}<button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn primary" value="save" id="dlgsave">${esc(saveLabel)}</button></div>`;
+    <div class="dfoot">${onDelete ? '<button type="button" class="btn danger left" id="dlgdel">Delete</button>' : ''}<button class="btn" value="cancel" formnovalidate>${noSave ? 'Close' : 'Cancel'}</button>${noSave ? '' : `<button class="btn primary" value="save" id="dlgsave">${esc(saveLabel)}</button>`}</div>`;
   dlg.onclose = null;
   $('#dlgform').onsubmit = async e => {
     if (e.submitter?.value !== 'save') return;
@@ -512,7 +545,7 @@ function openDialog({ title, body, onSave, onDelete, saveLabel = 'Save' }) {
     try { await onDelete(); dlg.close(); } catch (err) { toast(err.message, true); }
   };
   dlg.showModal();
-  dlg.querySelector('input, select, textarea')?.focus();
+  if (!noSave) dlg.querySelector('input, select, textarea')?.focus();
 }
 
 function appForm(a, extra = '') {
@@ -540,6 +573,122 @@ async function setPipeStatus(id, status) {
     return d;
   }, `Tracker: ${status.toLowerCase()} pipeline match`);
   S.data.status = next;
+}
+
+/* ---------- packets ---------- */
+function copyBlock(id, label, text, rows = 8) {
+  return `<div class="field full"><label for="${id}">${esc(label)}</label><textarea id="${id}" rows="${rows}" readonly>${esc(text)}</textarea>
+    <div class="row"><button type="button" class="btn small" data-act="copy" data-from="${id}">Copy</button></div></div>`;
+}
+function gmailLink(subject, body) {
+  return `https://mail.google.com/mail/?view=cm&fs=1&su=${encodeURIComponent(subject || '')}&body=${encodeURIComponent(body || '')}`;
+}
+function packetBody(pk, job) {
+  const parts = [];
+  if (pk.status === 'needs-key' || pk.status === 'error') {
+    parts.push(`<div class="field full notice ${pk.status === 'error' ? 'bad' : ''}">${esc(pk.status === 'error' ? `Build failed: ${pk.error}` : pk.note || 'Drafting needs the ANTHROPIC_API_KEY secret.')}</div>`);
+  }
+  if (pk.fit?.summary) parts.push(`<div class="field full"><label>Fit</label><p class="pk">${esc(pk.fit.summary)}</p>${pk.fit.gaps?.length ? `<p class="pk meta">Not shown on your resume: ${esc(pk.fit.gaps.join('; '))}</p>` : ''}</div>`);
+  const flagged = pk.check?.unsupported || [];
+  if (flagged.length) parts.push(`<div class="field full notice bad"><b>Check these before sending</b> (claims your resume doesn't back up):<ul>${flagged.map(f => `<li>"${esc(f.text)}" <span class="meta">${esc(f.why || '')}</span></li>`).join('')}</ul></div>`);
+  else if (pk.check && !pk.check.error) parts.push(`<div class="field full notice ok">Claim check passed: everything about you traces back to your resume.</div>`);
+  if (pk.resume) parts.push(`<div class="field full"><label>Tailored resume</label><div class="row"><button type="button" class="btn small primary" data-act="packet-resume" data-id="${esc(pk.id)}">Open printable resume</button><span class="meta">Opens a print-ready page. Choose "Save as PDF".</span></div></div>`);
+  if (pk.coverLetter) parts.push(copyBlock('pk-cover', 'Cover letter', pk.coverLetter, 12) + `<div class="field full" style="margin-top:-6px"><div class="row"><button type="button" class="btn small" data-act="packet-cover-print" data-id="${esc(pk.id)}">Printable cover letter</button></div></div>`);
+  (pk.answers || []).forEach((q, i) => parts.push(copyBlock(`pk-a${i}`, q.question, q.answer, 5)));
+  const o = pk.outreach;
+  if (o) {
+    const company = encodeURIComponent(pk.company);
+    parts.push(`<div class="field full"><label>Who to reach out to</label><p class="pk">${esc((o.lookFor || []).join(', ') || 'Engineers on the team, a university recruiter')}</p>
+      <div class="row"><a class="btn small" target="_blank" rel="noopener" href="https://www.linkedin.com/search/results/people/?keywords=${company}%20engineer">Find engineers</a>
+      <a class="btn small" target="_blank" rel="noopener" href="https://www.linkedin.com/search/results/people/?keywords=${company}%20university%20recruiter">Find recruiters</a>
+      <a class="btn small" target="_blank" rel="noopener" href="https://www.linkedin.com/search/results/people/?keywords=${company}%20%22University%20of%20Texas%22">UT alumni there</a></div></div>`);
+    if (o.emailBody) parts.push(copyBlock('pk-email', `Email to an engineer · subject: ${o.emailSubject || ''}`, o.emailBody, 8) + `<div class="field full" style="margin-top:-6px"><div class="row"><a class="btn small" target="_blank" rel="noopener" href="${esc(gmailLink(o.emailSubject, o.emailBody))}">Open as a Gmail draft</a><span class="meta">Replace [Name] and add the address before sending.</span></div></div>`);
+    if (o.recruiterEmailBody) parts.push(copyBlock('pk-remail', 'Email to a recruiter', o.recruiterEmailBody, 6) + `<div class="field full" style="margin-top:-6px"><div class="row"><a class="btn small" target="_blank" rel="noopener" href="${esc(gmailLink(o.emailSubject, o.recruiterEmailBody))}">Open as a Gmail draft</a></div></div>`);
+    if (o.linkedinNote) parts.push(copyBlock('pk-li', `LinkedIn connection note (${o.linkedinNote.length}/300)`, o.linkedinNote, 3));
+  }
+  if (pk.questions?.length && !pk.answers?.length) parts.push(`<div class="field full"><label>Questions on the application</label><ul class="pk">${pk.questions.map(q => `<li>${esc(q.label)}</li>`).join('')}</ul></div>`);
+  parts.push(`<div class="field full"><label>Job description (${esc(pk.jdSource || 'unknown')})</label>${pk.jd ? `<details><summary class="meta">Show ${esc(pk.jd.length.toLocaleString())} characters</summary><p class="pk jd">${esc(pk.jd)}</p></details>` : '<p class="pk meta">Couldn\'t read the posting automatically. Paste it below and rebuild for a much better packet.</p>'}
+    <div class="row"><button type="button" class="btn small" data-act="packet-paste" data-id="${esc(pk.id)}">Paste job description</button><button type="button" class="btn small" data-act="packet-rebuild" data-id="${esc(pk.id)}">Rebuild packet</button>
+    <span class="meta">Built ${esc(new Date(pk.builtAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))}${pk.cost ? `, about $${esc(pk.cost)}` : ''}</span></div></div>`);
+  return parts.join('');
+}
+
+function resumeHtml(pk) {
+  const r = S.data.resume;
+  if (!r) return '<p>Resume data (config/resume.json) is missing.</p>';
+  const sel = pk.resume;
+  const bulletText = new Map();
+  for (const e of r.experience) for (const ro of e.roles) for (const b of ro.bullets) bulletText.set(b.id, b.text);
+  for (const pj of r.projects) for (const b of pj.bullets) bulletText.set(b.id, b.text);
+  const li = ids => `<ul>${ids.map(id => bulletText.get(id)).filter(Boolean).map(t => `<li>${esc(t)}</li>`).join('')}</ul>`;
+  const row = (l, rgt, cls = '') => `<div class="r ${cls}"><span>${l}</span><span>${esc(rgt || '')}</span></div>`;
+  const include = new Set(sel.includeRoles || []);
+  const exp = r.experience.map(e => {
+    const roles = e.roles.filter(ro => include.has(ro.id));
+    if (!roles.length) return '';
+    return row(`<b>${esc(e.org)}</b>`, e.date) + roles.map(ro => row(`<i>${esc(ro.title)}</i>`, ro.date, 'sub') + li(sel.roles[ro.id] || ro.bullets.map(b => b.id))).join('');
+  }).join('');
+  const proj = sel.projects.map(sp => {
+    const pj = r.projects.find(x => x.id === sp.id);
+    if (!pj) return '';
+    return row(`<b>${esc(pj.title)}</b>${pj.link ? ` | <a href="${esc(safeUrl(pj.link))}">link</a>` : ''}`, pj.date) + li(sp.bullets);
+  }).join('');
+  const skills = sel.skillsOrder.map(id => r.skills.find(s => s.id === id)).filter(Boolean).map(s => `<li><b>${esc(s.label)}:</b> ${esc(s.items.join(', '))}</li>`).join('');
+  const ed = r.education.map(e => row(`<b>${esc(e.school)}</b>`, '') + row(`${esc(e.degree)}`, e.date, 'sub') + `<div class="cw">Coursework: ${esc(e.coursework)}</div>`).join('');
+  const contact = r.contact.map(c => (c.url ? `<a href="${esc(c.url)}">${esc(c.text)}</a>` : esc(c.text))).join(' · ');
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(r.name)} Resume - ${esc(pk.company)}</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caladea:ital,wght@0,400;0,700;1,400&display=swap">
+<style>
+@page { size: letter; margin: 0.45in 0.5in; }
+* { box-sizing: border-box; }
+body { font-family: Caladea, "Cambria", Georgia, serif; font-size: 10.6pt; line-height: 1.22; color: #000; margin: 0; }
+.page { max-width: 7.5in; margin: 0 auto; padding: 0.3in 0 0; }
+h1 { text-align: center; font-size: 22pt; margin: 0 0 2pt; font-weight: 700; }
+.contact { text-align: center; font-size: 10pt; margin-bottom: 6pt; }
+a { color: inherit; text-decoration: none; }
+h2 { font-size: 12pt; font-weight: 700; margin: 8pt 0 3pt; padding-bottom: 1pt; border-bottom: 0.8pt solid #000; font-variant: small-caps; letter-spacing: .02em; }
+.r { display: flex; justify-content: space-between; gap: 12pt; padding-left: 6pt; }
+.r span:last-child { white-space: nowrap; }
+.r.sub { margin-top: 1pt; }
+.cw { padding-left: 6pt; }
+ul { margin: 1pt 0 3pt; padding-left: 20pt; }
+li { margin: 0.6pt 0; }
+.bar { position: sticky; top: 0; background: #122230; color: #fff; padding: 8px 12px; font: 14px Arial, sans-serif; display: flex; gap: 10px; align-items: center; }
+.bar button { font: inherit; padding: 4px 10px; cursor: pointer; }
+@media print { .bar { display: none; } .page { padding: 0; } }
+</style></head><body>
+<div class="bar">Tailored for ${esc(pk.company)}: ${esc(pk.title)} <button onclick="print()">Print / Save as PDF</button></div>
+<div class="page">
+<h1>${esc(r.name)}</h1><div class="contact">${contact}</div>
+<h2>Education</h2>${ed}
+<h2>Experience</h2>${exp}
+<h2>Projects</h2>${proj}
+<h2>Technical Skills</h2><ul>${skills}</ul>
+</div></body></html>`;
+}
+function coverHtml(pk) {
+  const r = S.data.resume || { name: 'Leo Block', contact: [] };
+  const paras = String(pk.coverLetter || '').split(/\n\s*\n/).map(t => `<p>${esc(t).replace(/\n/g, '<br>')}</p>`).join('');
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(r.name)} Cover Letter - ${esc(pk.company)}</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caladea:wght@400;700&display=swap">
+<style>@page { size: letter; margin: 0.9in; } body { font-family: Caladea, Georgia, serif; font-size: 11.5pt; line-height: 1.4; max-width: 6.7in; margin: 0 auto; padding: .4in 0; }
+h1 { font-size: 18pt; margin: 0; } .c { margin-bottom: 18pt; font-size: 10.5pt; } a { color: inherit; text-decoration: none; }
+.bar { position: sticky; top: 0; background: #122230; color: #fff; padding: 8px 12px; font: 14px Arial, sans-serif; } .bar button { font: inherit; padding: 4px 10px; }
+@media print { .bar { display: none; } body { padding: 0; } }</style></head><body>
+<div class="bar"><button onclick="print()">Print / Save as PDF</button></div>
+<h1>${esc(r.name)}</h1><div class="c">${r.contact.map(c => esc(c.text)).join(' · ')}</div>
+<p>${esc(new Date().toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' }))}</p><p>${esc(pk.company)} hiring team</p>${paras}</body></html>`;
+}
+function openPrintable(html) {
+  const w = window.open('', '_blank');
+  if (!w) { toast('Allow pop-ups for this site to open the printable page.', true); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+}
+async function requestRebuild(id, extra = {}) {
+  S.data.packetReq = await updateFile(FILES.packetReq, d => { d.items ||= {}; d.items[id] = { at: new Date().toISOString(), ...extra }; return d; }, 'Tracker: rebuild packet');
+  delete S.packetCache?.[packetName(id)];
+  toast('Rebuilding. It takes about a minute; reopen the packet after.');
+  await sleep(2500); await loadRuns(); render(); watchRuns();
 }
 
 /* ---------- actions ---------- */
@@ -665,6 +814,36 @@ const ACTIONS = {
     if (!confirm('Remove the saved token from this device? You will need to paste a token again.')) return;
     store.set(ENC_KEY, ''); showLock('setup');
   },
+  async 'packet-open'(el) {
+    const id = el.dataset.id;
+    const job = S.data.pipeline.items.find(x => x.id === id) || {};
+    const pk = await getPacket(id);
+    if (!pk) { toast('No packet yet.', true); return; }
+    openDialog({ title: `${pk.company}: ${pk.title}`, body: packetBody(pk, job), wide: true, noSave: true, onSave: async () => {} });
+  },
+  async copy(el) {
+    const t = document.getElementById(el.dataset.from);
+    if (!t) return;
+    try { await navigator.clipboard.writeText(t.value); } catch { t.select(); document.execCommand('copy'); }
+    el.textContent = 'Copied'; setTimeout(() => { if (el.isConnected) el.textContent = 'Copy'; }, 1500);
+  },
+  async 'packet-resume'(el) { const pk = await getPacket(el.dataset.id); if (pk) openPrintable(resumeHtml(pk)); },
+  async 'packet-cover-print'(el) { const pk = await getPacket(el.dataset.id); if (pk) openPrintable(coverHtml(pk)); },
+  async 'packet-rebuild'(el) { $('#dlg').close(); await requestRebuild(el.dataset.id); },
+  async 'packet-paste'(el) {
+    const id = el.dataset.id;
+    $('#dlg').close();
+    openDialog({
+      title: 'Paste the job description',
+      saveLabel: 'Rebuild packet',
+      body: field('jd', 'Job description', '', { type: 'textarea', full: true, required: true })
+        + field('questions', 'Application questions (optional, one per line)', '', { type: 'textarea', full: true }),
+      onSave: async fd => {
+        const questions = String(fd.questions || '').split('\n').map(s => s.trim()).filter(Boolean);
+        await requestRebuild(id, { jd: String(fd.jd || '').slice(0, 20000), ...(questions.length ? { questions } : {}) });
+      },
+    });
+  },
   async export() {
     const blob = new Blob([JSON.stringify(S.data, null, 1)], { type: 'application/json' });
     const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `internship-tracker-${today()}.json` });
@@ -709,6 +888,7 @@ function watchRuns() {
       const f = finished[0];
       const r = await readFile(FILES.pipeline); S.data.pipeline = r.data || S.data.pipeline;
       const lr = await readFile(FILES.lastRun); S.data.lastRun = lr.data;
+      await listPackets();
       toast(f.conclusion === 'success' ? `${f.name} finished.` : `${f.name} ${f.conclusion}. Check Run history.`, f.conclusion !== 'success');
     }
     render();
@@ -784,6 +964,30 @@ const DEMO_DATA = {
   [FILES.options]: { industry: ['Aerospace', 'Automotive', 'Motorsports', 'Energy', 'Other'], source: ['#careers', 'LinkedIn', 'Career Expo', 'Referral', 'Pipeline', 'Other'], stage: ['Outreach', 'Emailed', 'Applied', 'Screening', 'Assessment', 'Interview', 'Technical Interview', 'Final Round', 'Offer', 'Rejected'], status: ['In Progress', 'Accepted', 'Rejected', 'Withdrawn', 'No Response'], portal: ['Greenhouse', 'Workday', 'Lever', 'Ashby', 'Other'] },
   [FILES.lastRun]: { date: '2026-10-22', finishedAt: '2026-10-22T12:43:00Z', mode: 'none', added: 3, stats: { fetched: 10991, new: 52 }, errors: [], trigger: 'schedule' },
 };
+const DEMO_PACKETS = {
+  [packetName('p-1')]: {
+    id: 'p-1', company: 'Example Robotics', title: 'Hardware Systems Integration Intern', url: 'https://example.com/job/1', builtAt: '2026-10-22T13:05:00Z', status: 'ready', jdSource: 'greenhouse', cost: 0.031,
+    jd: 'Example Robotics builds warehouse robots. Interns design test fixtures, debug electro-mechanical issues, and write Python tools.',
+    questions: [{ label: 'Why Example Robotics?' }],
+    fit: { summary: 'Integration and validation work on the solar car maps directly to building test setups and debugging hardware.', gaps: ['Python test tooling is not shown on the resume'] },
+    resume: { roles: { 'lhr-wrh': ['wrh-harness', 'wrh-mentor', 'wrh-smb'], 'lhr-pt': ['pt-protection', 'pt-enclosure'], 'voting-intern': ['vote-web'] }, projects: [{ id: 'daq', bullets: ['daq-design', 'daq-fab'] }, { id: 'aux24', bullets: ['aux-pcb', 'aux-frame'] }, { id: 'smb', bullets: ['smb-rev'] }], skillsOrder: ['sk-lab', 'sk-cad', 'sk-lang'], includeRoles: ['lhr-wrh', 'lhr-pt'] },
+    coverLetter: 'Sample cover letter paragraph one.\n\nParagraph two with a concrete project.\n\nLeo Block',
+    answers: [{ question: 'Why Example Robotics?', answer: 'Sample answer.' }],
+    outreach: { lookFor: ['hardware test engineers', 'university recruiter'], emailSubject: 'UT Austin harness lead, applied to HW Integration', emailBody: 'Hi [Name],\n\nSample email.\n\nLeo', recruiterEmailBody: 'Hi [Name],\n\nShort note.\n\nLeo', linkedinNote: 'Hi [Name], sample note.' },
+    check: { unsupported: [{ where: 'coverLetter', text: 'I wrote Python test tools.', why: 'Python test tooling is not in the resume' }] },
+  },
+};
+DEMO_DATA[FILES.resume] = { name: 'Sample Name', contact: [{ text: 'sample@example.com' }, { text: 'example.com' }], education: [{ school: 'Sample University', degree: 'B.S. Electrical Engineering', date: 'May 2028', coursework: 'Circuits, Signals' }],
+  experience: [{ id: 'lhr', org: 'Sample Racing Team', date: '2025 – Present', roles: [
+    { id: 'lhr-wrh', title: 'Harness Lead', date: '2026 – Present', bullets: [{ id: 'wrh-harness', text: 'Sample bullet about harness design.' }, { id: 'wrh-smb', text: 'Sample bullet about a BMS board.' }, { id: 'wrh-mentor', text: 'Sample bullet about mentoring.' }] },
+    { id: 'lhr-pt', title: 'Powertrain Engineer', date: '2025 – 2026', bullets: [{ id: 'pt-protection', text: 'Sample bullet about protection circuits.' }, { id: 'pt-enclosure', text: 'Sample bullet about enclosures.' }] }] },
+    { id: 'voting', org: 'Sample Org', date: '2023', roles: [{ id: 'voting-intern', title: 'Intern', date: '', bullets: [{ id: 'vote-web', text: 'Sample web bullet.' }] }] }],
+  projects: [{ id: 'daq', title: 'Sample Harness Project', date: '2026', link: 'https://example.com', bullets: [{ id: 'daq-design', text: 'Sample design bullet.' }, { id: 'daq-fab', text: 'Sample fabrication bullet.' }] },
+    { id: 'aux24', title: 'Sample Battery Project', date: '2025', bullets: [{ id: 'aux-pcb', text: 'Sample PCB bullet.' }, { id: 'aux-frame', text: 'Sample frame bullet.' }] },
+    { id: 'smb', title: 'Sample Board', date: '2026', bullets: [{ id: 'smb-rev', text: 'Sample board bullet.' }] }],
+  skills: [{ id: 'sk-cad', label: 'CAD', items: ['KiCad'] }, { id: 'sk-lang', label: 'Languages', items: ['C'] }, { id: 'sk-lab', label: 'Lab', items: ['Oscilloscope'] }] };
+DEMO_DATA[FILES.status].items['p-1'] = { status: 'Approved' };
+DEMO_DATA[FILES.packetReq] = { items: {} };
 function demoRead(path) { return Promise.resolve({ data: structuredClone(DEMO_DATA[path] ?? null), sha: 'demo' }); }
 function demoUpdate(path, mutate) { DEMO_DATA[path] = mutate(structuredClone(DEMO_DATA[path] ?? {})); return Promise.resolve(structuredClone(DEMO_DATA[path])); }
 

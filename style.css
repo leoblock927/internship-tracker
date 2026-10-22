@@ -236,3 +236,15 @@ dialog form { display: flex; flex-direction: column; max-height: calc(100vh - 36
   .barrow { grid-template-columns: 100px 1fr 30px; }
 }
 @media (prefers-reduced-motion: reduce) { .state.busy::before { animation: none; } }
+
+/* Packet view */
+dialog.wide { width: min(920px, calc(100vw - 24px)); }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; }
+.pk { margin: 0; font-size: .94rem; }
+.pk.jd { white-space: pre-wrap; max-height: 280px; overflow: auto; background: var(--board); border: 1px solid var(--rule); border-radius: var(--radius); padding: 10px; margin-top: 6px; font-size: .86rem; }
+.notice { border: 1px solid var(--rule); border-left: 4px solid var(--auto); border-radius: var(--radius); padding: 10px 12px; background: var(--board); font-size: .92rem; }
+.notice.bad { border-left-color: var(--batt); }
+.notice.ok { border-left-color: var(--can); }
+.notice ul { margin: 6px 0 0; padding-left: 18px; }
+.field textarea[readonly] { background: var(--board); }
+details summary { cursor: pointer; margin-top: 4px; }
