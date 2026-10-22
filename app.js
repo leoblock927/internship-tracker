@@ -646,6 +646,13 @@ function packetBody(pk, job) {
   const flagged = pk.check?.unsupported || [];
   if (flagged.length) parts.push(`<div class="field full notice bad"><b>Check these before sending</b> (claims your resume doesn't back up):<ul>${flagged.map(f => `<li>"${esc(f.text)}" <span class="meta">${esc(f.why || '')}</span></li>`).join('')}</ul></div>`);
   else if (pk.check && !pk.check.error) parts.push(`<div class="field full notice ok">Claim check passed: everything about you traces back to your resume.</div>`);
+  const rw = Object.entries(pk.resume?.text || {});
+  if (rw.length || pk.resumeNotes?.length) {
+    const orig = new Map();
+    const r = S.data.resume;
+    if (r) { for (const e of r.experience) for (const ro of e.roles) for (const b of ro.bullets) orig.set(b.id, b.text); for (const pj of r.projects) for (const b of pj.bullets) orig.set(b.id, b.text); }
+    parts.push(`<div class="field full"><label>Reworded for this posting (${rw.length})</label><details><summary class="meta">Compare with your original bullets</summary><ul class="pk">${rw.map(([id, t]) => `<li><b>${esc(t)}</b><br><span class="meta">was: ${esc(orig.get(id) || id)}</span></li>`).join('')}</ul>${pk.resumeNotes?.length ? `<p class="pk meta">Kept original wording for: ${pk.resumeNotes.map(n => esc(`${n.id} (${n.why})`)).join('; ')}</p>` : ''}</details></div>`);
+  }
   if (pk.resume) parts.push(`<div class="field full"><label>Tailored resume</label><div class="row"><button type="button" class="btn small primary" data-act="packet-resume" data-id="${esc(pk.id)}">Open printable resume</button><span class="meta">Opens a print-ready page. Choose "Save as PDF".</span></div></div>`);
   parts.push(`<div class="field full"><label for="pk-cmd">Fill the application on your laptop</label>
     <input id="pk-cmd" readonly value="${esc(`npm run apply -- "${pk.id}"`)}">
@@ -677,6 +684,7 @@ function resumeHtml(pk) {
   const bulletText = new Map();
   for (const e of r.experience) for (const ro of e.roles) for (const b of ro.bullets) bulletText.set(b.id, b.text);
   for (const pj of r.projects) for (const b of pj.bullets) bulletText.set(b.id, b.text);
+  for (const [id, t] of Object.entries(sel.text || {})) if (bulletText.has(id)) bulletText.set(id, t); // reworded for this posting
   const li = ids => `<ul>${ids.map(id => bulletText.get(id)).filter(Boolean).map(t => `<li>${esc(t)}</li>`).join('')}</ul>`;
   const row = (l, rgt, cls = '') => `<div class="r ${cls}"><span>${l}</span><span>${esc(rgt || '')}</span></div>`;
   const include = new Set(sel.includeRoles || []);
@@ -690,7 +698,9 @@ function resumeHtml(pk) {
     if (!pj) return '';
     return row(`<b>${esc(pj.title)}</b>${pj.link ? ` | <a href="${esc(safeUrl(pj.link))}">link</a>` : ''}`, pj.date) + li(sp.bullets);
   }).join('');
-  const skills = sel.skillsOrder.map(id => r.skills.find(s => s.id === id)).filter(Boolean).map(s => `<li><b>${esc(s.label)}:</b> ${esc(s.items.join(', '))}</li>`).join('');
+  const skills = sel.skillsOrder.map(id => r.skills.find(s => s.id === id)).filter(Boolean)
+    .map(s => ({ label: s.label, items: sel.skills?.[s.id] || s.items })).filter(s => s.items.length)
+    .map(s => `<li><b>${esc(s.label)}:</b> ${esc(s.items.join(', '))}</li>`).join('');
   const ed = r.education.map(e => row(`<b>${esc(e.school)}</b>`, '') + row(`${esc(e.degree)}`, e.date, 'sub') + `<div class="cw">Coursework: ${esc(e.coursework)}</div>`).join('');
   const contact = r.contact.map(c => (c.url ? `<a href="${esc(c.url)}">${esc(c.text)}</a>` : esc(c.text))).join(' · ');
   return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(r.name)} Resume - ${esc(pk.company)}</title>
