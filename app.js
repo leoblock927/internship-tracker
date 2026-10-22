@@ -324,9 +324,9 @@ function renderTitleBlock() {
   if (lr) {
     const when = lr.finishedAt ? new Date(lr.finishedAt) : null;
     const failed = lastScan && lastScan.conclusion !== 'success';
-    $('#lastrun').innerHTML = `${esc(when ? when.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ', ' + when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : lr.date)} <small>${failed ? '<span style="color:var(--batt)">last run failed</span>' : esc(lr.mode === 'paused' ? 'skipped (paused)' : (lr.trigger === 'schedule' ? 'scheduled' : 'manual'))}</small>`;
+    $('#lastrun').innerHTML = `${esc(when ? when.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ', ' + when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : lr.date)}<small>${failed ? '<span style="color:var(--batt)">last run failed</span>' : esc(lr.mode === 'paused' ? 'skipped (paused)' : (lr.trigger === 'schedule' ? 'scheduled' : 'manual'))}</small>`;
     const s = lr.stats || {};
-    $('#lastfound').innerHTML = lr.mode === 'paused' ? '<small>nothing, paused</small>' : `${esc(lr.added ?? 0)} added <small>of ${esc(s.new ?? 0)} new, ${esc((s.fetched ?? 0).toLocaleString())} checked${lr.errors?.length ? `, <span style="color:var(--batt)">${lr.errors.length} errors</span>` : ''}</small>`;
+    $('#lastfound').innerHTML = lr.mode === 'paused' ? '<small>nothing, paused</small>' : `${esc(lr.added ?? 0)} added<small>of ${esc(s.new ?? 0)} new, ${esc((s.fetched ?? 0).toLocaleString())} checked${lr.errors?.length ? `, <span style="color:var(--batt)">${lr.errors.length} errors</span>` : ''}</small>`;
   } else {
     $('#lastrun').innerHTML = '<small>No runs yet</small>';
     $('#lastfound').innerHTML = '<small>...</small>';

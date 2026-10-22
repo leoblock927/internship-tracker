@@ -49,6 +49,7 @@ a { color: inherit; }
 .brand .loom i:nth-child(4) { background: var(--auto); }
 .brand small { font-weight: 500; color: var(--ink-soft); font-stretch: 80%; font-size: .95rem; }
 nav.tabs { display: flex; gap: 4px; margin-left: auto; overflow-x: auto; scrollbar-width: none; }
+nav.tabs[hidden] + #theme { margin-left: auto; }
 nav.tabs::-webkit-scrollbar { display: none; }
 nav.tabs button {
   background: none; border: 0; padding: 8px 12px; border-radius: var(--radius); cursor: pointer;
@@ -70,7 +71,7 @@ nav.tabs .count { font-weight: 500; color: var(--ink-soft); margin-left: 4px; }
 .titleblock > div:last-child { border-right: 0; }
 .titleblock .k { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-soft); font-stretch: 80%; }
 .titleblock .v { font-weight: 800; font-size: 1.02rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.titleblock .v small { font-weight: 500; color: var(--ink-soft); }
+.titleblock .v small { display: block; font-weight: 500; font-size: .84rem; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .titleblock .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .state { display: inline-flex; align-items: center; gap: 8px; }
 .state::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--mute); }
@@ -140,6 +141,7 @@ th[aria-sort="ascending"]::after { content: " ▴"; }
 tbody tr { cursor: pointer; }
 tbody tr:hover { background: color-mix(in srgb, var(--hv) 6%, transparent); }
 td.co { font-weight: 800; white-space: nowrap; }
+td[data-l="Status"], td[data-l="Stage"] { white-space: nowrap; }
 td.wire { padding: 0; width: 4px; }
 td.wire span { display: block; width: 4px; min-height: 38px; height: 100%; background: var(--wire, var(--mute)); }
 td .sub { color: var(--ink-soft); font-size: .84rem; }
@@ -212,7 +214,11 @@ dialog form { display: flex; flex-direction: column; max-height: calc(100vh - 36
   .titleblock .actions { grid-column: 1 / -1; border-bottom: 0; }
 }
 @media (max-width: 760px) {
-  .bar .wrap { gap: 10px; }
+  .bar .wrap { gap: 8px 10px; flex-wrap: wrap; height: auto; padding-top: 10px; padding-bottom: 6px; }
+  .brand { margin-right: auto; }
+  nav.tabs { order: 3; width: 100%; margin-left: 0; justify-content: space-between; }
+  nav.tabs button { padding: 7px 8px; }
+  nav.tabs[hidden] + #theme { margin-left: 0; }
   .brand small { display: none; }
   .search { width: 100%; order: 5; }
   .card { grid-template-columns: 48px minmax(0, 1fr); }
