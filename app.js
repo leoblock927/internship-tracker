@@ -664,7 +664,18 @@ li { margin: 0.6pt 0; }
 <h2>Experience</h2>${exp}
 <h2>Projects</h2>${proj}
 <h2>Technical Skills</h2><ul>${skills}</ul>
-</div></body></html>`;
+</div>
+<script>
+// Shrink the font a little if the tailored resume runs past one letter page.
+(function () {
+  var pg = document.querySelector('.page'), max = (11 - 0.9) * 96, fs = 10.6;
+  function h() { return pg.scrollHeight - parseFloat(getComputedStyle(pg).paddingTop); }
+  (document.fonts ? document.fonts.ready : Promise.resolve()).then(function () {
+    while (h() > max && fs > 9.6) { fs = Math.round((fs - 0.2) * 10) / 10; document.body.style.fontSize = fs + 'pt'; }
+    if (h() > max) document.querySelector('.bar').insertAdjacentHTML('beforeend', ' <b style="color:#ffb37a">Runs past one page: rebuild or drop a bullet.</b>');
+  });
+})();
+</script></body></html>`;
 }
 function coverHtml(pk) {
   const r = S.data.resume || { name: 'Leo Block', contact: [] };
