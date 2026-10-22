@@ -366,8 +366,11 @@ function toolbar(title, sub, extra = '') {
   return `<div class="toolbar"><h2>${esc(title)}<small>${esc(sub)}</small></h2>
     <input class="search" id="search" type="search" placeholder="Search" value="${esc(S.q)}" aria-label="Search">${extra}</div>`;
 }
-function seg(key, values) {
-  return `<div class="seg" role="group">${values.map(v => `<button type="button" data-act="seg" data-key="${key}" data-val="${esc(v)}" aria-pressed="${S.prefs[key] === v}">${esc(v)}</button>`).join('')}</div>`;
+function seg(key, values, countFn) {
+  return `<div class="seg" role="group">${values.map(v => {
+    const c = countFn ? countFn(v) : null;
+    return `<button type="button" data-act="seg" data-key="${key}" data-val="${esc(v)}" aria-pressed="${S.prefs[key] === v}">${esc(v)}${c ? ` <span class="segn">${c}</span>` : ''}</button>`;
+  }).join('')}</div>`;
 }
 
 function viewPipeline() {
@@ -378,7 +381,7 @@ function viewPipeline() {
     .filter(j => matchesQ(j.company, j.title, (j.locations || []).join(' '), (j.flags || []).join(' ')))
     .sort((a, b) => (b.dateFound || '').localeCompare(a.dateFound || '') || (scoreOf(b) ?? 0) - (scoreOf(a) ?? 0));
   const n = s => all.filter(j => pipeStatus(j.id) === s).length;
-  const head = toolbar('Pipeline', `${n('New')} new, ${n('Approved')} approved`, seg('pipeFilter', ['New', 'Approved', 'Applied', 'Skipped', 'All']));
+  const head = toolbar('Pipeline', `${n('New')} new, ${n('Approved')} approved`, seg('pipeFilter', ['New', 'Approved', 'Applied', 'Skipped', 'All'], v => (v === 'All' ? 0 : n(v))));
   if (!list.length) return head + `<div class="empty">${f === 'New' ? 'No new matches right now. The next scan runs tomorrow morning, or press Run scan.' : 'Nothing here.'}</div>`;
   return head + `<div class="cards">${list.map(pipeCard).join('')}</div>`;
 }
@@ -782,7 +785,15 @@ const ACTIONS = {
     S.prefs.appSort = [k, sk === k ? -dir : (k === 'dateApplied' ? -1 : 1)];
     savePrefs(); render();
   },
-  async 'pipe-approve'(el) { await setPipeStatus(el.dataset.id, 'Approved'); render(); toast('Approved.'); },
+  async 'pipe-approve'(el) {
+    const id = el.dataset.id;
+    await setPipeStatus(id, 'Approved');
+    await listPackets();
+    render();
+    if (S.packets?.has(packetName(id))) { toast('Approved. Opening its packet.'); await ACTIONS['packet-open']({ dataset: { id } }); }
+    else toast('Approved. Its packet is being built; find it under the Approved filter in about a minute.');
+    watchRuns();
+  },
   async 'pipe-skip'(el) { await setPipeStatus(el.dataset.id, 'Skipped'); render(); toast('Skipped.'); },
   async 'pipe-undo'(el) { await setPipeStatus(el.dataset.id, 'New'); render(); },
   async 'pipe-applied'(el) {

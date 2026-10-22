@@ -254,3 +254,6 @@ details summary { cursor: pointer; margin-top: 4px; }
 .orow input, .orow select { border: 1px solid var(--rule); background: var(--board); border-radius: var(--radius); padding: 6px 8px; min-width: 0; font-size: .88rem; }
 .orow .mini { display: flex; flex-direction: column; font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-soft); gap: 2px; }
 @media (max-width: 760px) { .orow { grid-template-columns: 1fr 1fr; } .orow > input:first-child { grid-column: 1 / -1; } }
+
+.segn { display: inline-block; min-width: 1.4em; padding: 0 5px; margin-left: 3px; border-radius: 999px; background: var(--board-2); color: var(--ink); font-size: .78rem; text-align: center; }
+.seg button[aria-pressed="true"] .segn { background: var(--board); color: var(--ink); }
