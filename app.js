@@ -586,13 +586,16 @@ function gmailLink(subject, body) {
 function packetBody(pk, job) {
   const parts = [];
   if (pk.status === 'needs-key' || pk.status === 'error') {
-    parts.push(`<div class="field full notice ${pk.status === 'error' ? 'bad' : ''}">${esc(pk.status === 'error' ? `Build failed: ${pk.error}` : pk.note || 'Drafting needs the ANTHROPIC_API_KEY secret.')}</div>`);
+    parts.push(`<div class="field full notice ${pk.status === 'error' ? 'bad' : ''}">${esc(pk.status === 'error' ? `Build failed: ${pk.error}` : 'Waiting on drafting. Add the ANTHROPIC_API_KEY secret to draft automatically, or tell Claude in chat "draft my waiting packets". The job description and questions are already saved below.')}</div>`);
   }
   if (pk.fit?.summary) parts.push(`<div class="field full"><label>Fit</label><p class="pk">${esc(pk.fit.summary)}</p>${pk.fit.gaps?.length ? `<p class="pk meta">Not shown on your resume: ${esc(pk.fit.gaps.join('; '))}</p>` : ''}</div>`);
   const flagged = pk.check?.unsupported || [];
   if (flagged.length) parts.push(`<div class="field full notice bad"><b>Check these before sending</b> (claims your resume doesn't back up):<ul>${flagged.map(f => `<li>"${esc(f.text)}" <span class="meta">${esc(f.why || '')}</span></li>`).join('')}</ul></div>`);
   else if (pk.check && !pk.check.error) parts.push(`<div class="field full notice ok">Claim check passed: everything about you traces back to your resume.</div>`);
   if (pk.resume) parts.push(`<div class="field full"><label>Tailored resume</label><div class="row"><button type="button" class="btn small primary" data-act="packet-resume" data-id="${esc(pk.id)}">Open printable resume</button><span class="meta">Opens a print-ready page. Choose "Save as PDF".</span></div></div>`);
+  parts.push(`<div class="field full"><label for="pk-cmd">Fill the application on your laptop</label>
+    <input id="pk-cmd" readonly value="${esc(`npm run apply -- "${pk.id}"`)}">
+    <div class="row"><button type="button" class="btn small" data-act="copy" data-from="pk-cmd">Copy</button><span class="meta">Run in your internship-pipeline folder. It fills the form and stops before Submit.</span></div></div>`);
   if (pk.coverLetter) parts.push(copyBlock('pk-cover', 'Cover letter', pk.coverLetter, 12) + `<div class="field full" style="margin-top:-6px"><div class="row"><button type="button" class="btn small" data-act="packet-cover-print" data-id="${esc(pk.id)}">Printable cover letter</button></div></div>`);
   (pk.answers || []).forEach((q, i) => parts.push(copyBlock(`pk-a${i}`, q.question, q.answer, 5)));
   const o = pk.outreach;
