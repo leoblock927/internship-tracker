@@ -634,8 +634,8 @@ function copyBlock(id, label, text, rows = 8) {
   return `<div class="field full"><label for="${id}">${esc(label)}</label><textarea id="${id}" rows="${rows}" readonly>${esc(text)}</textarea>
     <div class="row"><button type="button" class="btn small" data-act="copy" data-from="${id}">Copy</button></div></div>`;
 }
-function gmailLink(subject, body) {
-  return `https://mail.google.com/mail/?view=cm&fs=1&su=${encodeURIComponent(subject || '')}&body=${encodeURIComponent(body || '')}`;
+function gmailLink(subject, body, to = '') {
+  return `https://mail.google.com/mail/?view=cm&fs=1${to ? `&to=${encodeURIComponent(to)}` : ''}&su=${encodeURIComponent(subject || '')}&body=${encodeURIComponent(body || '')}`;
 }
 function packetBody(pk, job) {
   const parts = [];
@@ -646,6 +646,8 @@ function packetBody(pk, job) {
   const flagged = pk.check?.unsupported || [];
   if (flagged.length) parts.push(`<div class="field full notice bad"><b>Check these before sending</b> (claims your resume doesn't back up):<ul>${flagged.map(f => `<li>"${esc(f.text)}" <span class="meta">${esc(f.why || '')}</span></li>`).join('')}</ul></div>`);
   else if (pk.check && !pk.check.error) parts.push(`<div class="field full notice ok">Claim check passed: everything about you traces back to your resume.</div>`);
+  const voiceLeft = Object.entries(pk.voice?.remaining || {});
+  if (voiceLeft.length) parts.push(`<div class="field full notice bad"><b>Still sounds AI-written in places</b>:<ul>${voiceLeft.map(([k, hits]) => `<li>${esc(k)}: ${hits.map(h => `"${esc(h.phrase)}" (${esc(h.why)})`).join(', ')}</li>`).join('')}</ul></div>`);
   const rw = Object.entries(pk.resume?.text || {});
   if (rw.length || pk.resumeNotes?.length) {
     const orig = new Map();
@@ -666,6 +668,18 @@ function packetBody(pk, job) {
       <div class="row"><a class="btn small" target="_blank" rel="noopener" href="https://www.linkedin.com/search/results/people/?keywords=${company}%20engineer">Find engineers</a>
       <a class="btn small" target="_blank" rel="noopener" href="https://www.linkedin.com/search/results/people/?keywords=${company}%20university%20recruiter">Find recruiters</a>
       <a class="btn small" target="_blank" rel="noopener" href="https://www.linkedin.com/search/results/people/?keywords=${company}%20%22University%20of%20Texas%22">UT alumni there</a></div></div>`);
+    // People found for this job, each with their own email and LinkedIn note.
+    if (pk.contacts?.length) {
+      parts.push(`<div class="field full"><label>People to contact (${pk.contacts.length})</label><p class="pk meta">${esc(pk.contactsNote || '')} Check each profile before reaching out.</p></div>`);
+      pk.contacts.forEach((c, i) => {
+        parts.push(`<div class="field full"><label>${esc(c.name)} · ${esc(c.title)} <span class="meta">(${esc(c.kind)})</span></label>
+          <p class="pk meta">${esc(c.why || '')}${c.evidence ? ` · "${esc(c.evidence)}"` : ''}</p>
+          <div class="row"><a class="btn small" target="_blank" rel="noopener" href="${esc(safeUrl(c.profileUrl))}">Open profile</a>
+          ${c.email ? `<span class="meta">${esc(c.email)} (unverified guess)</span>` : '<span class="meta">No email found; message on LinkedIn or find it on the company site.</span>'}</div></div>`);
+        if (c.emailBody) parts.push(copyBlock(`pk-c${i}-email`, `Email to ${c.name} · subject: ${c.emailSubject || ''}`, c.emailBody, 7) + `<div class="field full" style="margin-top:-6px"><div class="row"><a class="btn small" target="_blank" rel="noopener" href="${esc(gmailLink(c.emailSubject, c.emailBody, c.email || ''))}">Open as a Gmail draft</a></div></div>`);
+        if (c.linkedinNote) parts.push(copyBlock(`pk-c${i}-li`, `LinkedIn note to ${c.name} (${c.linkedinNote.length}/300)`, c.linkedinNote, 3));
+      });
+    } else if (pk.contactsNote) parts.push(`<div class="field full"><p class="pk meta">${esc(pk.contactsNote)}</p></div>`);
     if (o.emailBody) parts.push(copyBlock('pk-email', `Email to an engineer · subject: ${o.emailSubject || ''}`, o.emailBody, 8) + `<div class="field full" style="margin-top:-6px"><div class="row"><a class="btn small" target="_blank" rel="noopener" href="${esc(gmailLink(o.emailSubject, o.emailBody))}">Open as a Gmail draft</a><span class="meta">Replace [Name] and add the address before sending.</span></div></div>`);
     if (o.recruiterEmailBody) parts.push(copyBlock('pk-remail', 'Email to a recruiter', o.recruiterEmailBody, 6) + `<div class="field full" style="margin-top:-6px"><div class="row"><a class="btn small" target="_blank" rel="noopener" href="${esc(gmailLink(o.emailSubject, o.recruiterEmailBody))}">Open as a Gmail draft</a></div></div>`);
     if (o.linkedinNote) parts.push(copyBlock('pk-li', `LinkedIn connection note (${o.linkedinNote.length}/300)`, o.linkedinNote, 3));
