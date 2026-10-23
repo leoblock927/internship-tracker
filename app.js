@@ -646,6 +646,7 @@ function packetBody(pk, job) {
   const flagged = pk.check?.unsupported || [];
   if (flagged.length) parts.push(`<div class="field full notice bad"><b>Check these before sending</b> (claims your resume doesn't back up):<ul>${flagged.map(f => `<li>"${esc(f.text)}" <span class="meta">${esc(f.why || '')}</span></li>`).join('')}</ul></div>`);
   else if (pk.check && !pk.check.error) parts.push(`<div class="field full notice ok">Claim check passed: everything about you traces back to your resume.</div>`);
+  if (pk.check?.fixed?.length) parts.push(`<div class="field full"><details><summary class="meta">Fixed automatically before saving (${pk.check.fixed.length})</summary><ul class="pk">${pk.check.fixed.map(f => `<li>"${esc(f.text)}" <span class="meta">${esc(f.why || '')}</span></li>`).join('')}</ul></details></div>`);
   const voiceLeft = Object.entries(pk.voice?.remaining || {});
   if (voiceLeft.length) parts.push(`<div class="field full notice bad"><b>Still sounds AI-written in places</b>:<ul>${voiceLeft.map(([k, hits]) => `<li>${esc(k)}: ${hits.map(h => `"${esc(h.phrase)}" (${esc(h.why)})`).join(', ')}</li>`).join('')}</ul></div>`);
   const rw = Object.entries(pk.resume?.text || {});
