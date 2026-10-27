@@ -475,7 +475,10 @@ function viewWaiting() {
 
 // Pop-up for the day grid: shows up right away on hover (or tap on a phone) and lists that day's applications with links.
 let HEAT_DAYS = new Map();
-let heatHide = null, heatPinned = null;
+// Hover a square: a small count shows after a short pause, then the full list of companies if you stay on it.
+// Tap (phone) or click: the full list right away, pinned until you tap elsewhere. The pop-up never covers the square.
+const HEAT_COUNT_MS = 250, HEAT_LIST_MS = 1100;
+let heatTimers = [], heatHide = null, heatPinned = null, heatCell = null, heatFull = false;
 function postingUrl(a) {
   if (/^https?:\/\//.test(a.url || '')) return a.url;
   const n = x => String(x || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').trim();
@@ -491,45 +494,70 @@ function heatPop() {
   if (!pop) {
     pop = document.createElement('div');
     pop.id = 'heatpop'; pop.className = 'heatpop'; pop.setAttribute('role', 'dialog'); pop.hidden = true;
-    pop.addEventListener('pointerenter', () => clearTimeout(heatHide));
-    pop.addEventListener('pointerleave', () => { if (!heatPinned) heatHide = setTimeout(hideHeat, 150); });
+    pop.addEventListener('pointerenter', () => { clearTimeout(heatHide); if (heatCell && !heatFull) showHeat(heatCell, true); });
+    pop.addEventListener('pointerleave', () => { if (!heatPinned) heatHide = setTimeout(hideHeat, 200); });
     document.body.appendChild(pop);
   }
   return pop;
 }
-function hideHeat() { const pop = document.getElementById('heatpop'); if (pop) pop.hidden = true; heatPinned = null; }
-function showHeat(cell) {
+function clearHeatTimers() { heatTimers.forEach(clearTimeout); heatTimers = []; }
+function hideHeat() { clearHeatTimers(); const pop = document.getElementById('heatpop'); if (pop) pop.hidden = true; heatPinned = null; heatCell = null; heatFull = false; }
+// Put the pop-up beside the square, never on top of it: above, else below, else to the right or left.
+function placeHeat(pop, cell) {
+  const r = cell.getBoundingClientRect(), pw = pop.offsetWidth, ph = pop.offsetHeight, gap = 8, vw = window.innerWidth, vh = window.innerHeight;
+  const clampX = x => Math.min(Math.max(8, x), vw - pw - 8), clampY = y => Math.min(Math.max(8, y), vh - ph - 8);
+  let left, top;
+  if (r.top - ph - gap >= 8) { left = clampX(r.left + r.width / 2 - pw / 2); top = r.top - ph - gap; }
+  else if (r.bottom + gap + ph <= vh - 8) { left = clampX(r.left + r.width / 2 - pw / 2); top = r.bottom + gap; }
+  else if (r.right + gap + pw <= vw - 8) { left = r.right + gap; top = clampY(r.top + r.height / 2 - ph / 2); }
+  else if (r.left - gap - pw >= 8) { left = r.left - gap - pw; top = clampY(r.top + r.height / 2 - ph / 2); }
+  else { left = clampX(r.left); top = r.bottom + gap; } // tiny screens: below, scrolls inside
+  pop.style.left = `${left}px`; pop.style.top = `${top}px`;
+  pop.style.maxHeight = `${Math.max(120, top >= r.bottom ? vh - top - 8 : r.top - gap - 8)}px`;
+}
+function showHeat(cell, full) {
   clearTimeout(heatHide);
+  heatCell = cell; heatFull = full;
   const day = cell.dataset.day, list = HEAT_DAYS.get(day) || [];
   const pop = heatPop();
   const date = new Date(`${day}T00:00:00`).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
   const companies = new Set(list.map(a => a.company)).size;
-  pop.innerHTML = `<div class="hp-head"><b>${esc(list.length || 'No')} application${list.length === 1 ? '' : 's'}</b>${list.length ? ` · ${esc(companies)} compan${companies === 1 ? 'y' : 'ies'}` : ''}<span class="meta">${esc(date)}</span></div>`
-    + (list.length ? `<ul>${list.map(a => {
+  const head = `<div class="hp-head"><b>${esc(list.length || 'No')} application${list.length === 1 ? '' : 's'}</b>${list.length ? ` · ${esc(companies)} compan${companies === 1 ? 'y' : 'ies'}` : ''}<span class="meta">${esc(date)}</span></div>`;
+  pop.classList.toggle('compact', !full || !list.length);
+  pop.innerHTML = head + (full && list.length ? `<ul>${list.map(a => {
       const url = postingUrl(a);
       return `<li><div><b>${esc(a.company)}</b><span class="meta">${esc(a.role || '')}</span></div>
         <div class="hp-links"><span class="hp-stage" style="--wire:${wireVar(appWire(a))}">${esc(a.status === 'Rejected' ? 'Rejected' : a.stage || 'Applied')}</span>
         ${url ? `<a href="${esc(safeUrl(url))}" target="_blank" rel="noopener">Posting ↗</a>` : ''}
         <a href="#" data-act="app-edit" data-id="${esc(a.id)}">Details</a></div></li>`;
-    }).join('')}</ul>` : '');
+    }).join('')}</ul>` : (list.length ? '<div class="hp-more meta">Keep hovering to see the companies</div>' : ''));
   pop.hidden = false;
-  const r = cell.getBoundingClientRect(), pw = pop.offsetWidth, ph = pop.offsetHeight;
-  let left = Math.min(Math.max(8, r.left + r.width / 2 - pw / 2), window.innerWidth - pw - 8);
-  let top = r.top - ph - 8;
-  if (top < 8) top = r.bottom + 8;
-  pop.style.left = `${left}px`; pop.style.top = `${Math.min(top, window.innerHeight - ph - 8)}px`;
+  placeHeat(pop, cell);
 }
-document.addEventListener('pointerover', e => { const c = e.target.closest?.('.hc[data-day]'); if (c && !heatPinned) showHeat(c); });
-document.addEventListener('pointerout', e => { if (e.target.closest?.('.hc[data-day]') && !heatPinned) heatHide = setTimeout(hideHeat, 150); });
+document.addEventListener('pointerover', e => {
+  const c = e.target.closest?.('.hc[data-day]');
+  if (!c || heatPinned || e.pointerType === 'touch') return;
+  if (c === heatCell) { clearTimeout(heatHide); return; }
+  clearHeatTimers();
+  if (heatCell) showHeat(c, false); // already showing one: switch right away
+  else heatTimers.push(setTimeout(() => showHeat(c, false), HEAT_COUNT_MS));
+  heatTimers.push(setTimeout(() => showHeat(c, true), HEAT_LIST_MS));
+});
+document.addEventListener('pointerout', e => {
+  if (!e.target.closest?.('.hc[data-day]') || heatPinned || e.pointerType === 'touch') return;
+  if (e.relatedTarget?.closest?.('.hc[data-day]')) return; // moving to another square: pointerover handles it
+  clearHeatTimers();
+  heatHide = setTimeout(hideHeat, 200);
+});
 document.addEventListener('click', e => {
   const c = e.target.closest?.('.hc[data-day]');
-  if (c) { if (heatPinned === c) hideHeat(); else { heatPinned = null; showHeat(c); heatPinned = c; } return; }
+  if (c) { if (heatPinned === c) hideHeat(); else { clearHeatTimers(); showHeat(c, true); heatPinned = c; } return; }
   if (!e.target.closest?.('#heatpop')) hideHeat();
   else if (e.target.closest('[data-act="app-edit"]')) { e.preventDefault(); hideHeat(); }
 });
-document.addEventListener('focusin', e => { const c = e.target.closest?.('.hc[data-day]'); if (c) showHeat(c); });
+document.addEventListener('focusin', e => { const c = e.target.closest?.('.hc[data-day]'); if (c) showHeat(c, true); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') hideHeat(); });
-window.addEventListener('scroll', () => { if (!heatPinned) hideHeat(); }, { passive: true });
+window.addEventListener('scroll', () => { if (!heatPinned) hideHeat(); else if (heatCell) placeHeat(heatPop(), heatCell); }, { passive: true });
 
 // GitHub-style grid: one square per day, darker green for more applications that day.
 function heatmap(apps) {
