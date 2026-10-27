@@ -473,6 +473,61 @@ function viewWaiting() {
   }).join('')}</div>`;
 }
 
+// GitHub-style grid: one square per day, darker green for more applications that day.
+function heatmap(apps) {
+  const DAY = 86400000;
+  const key = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const byDay = new Map();
+  for (const a of apps) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(a.dateApplied || '')) continue;
+    if (!byDay.has(a.dateApplied)) byDay.set(a.dateApplied, []);
+    byDay.get(a.dateApplied).push(a);
+  }
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  // Start on the Sunday 26 weeks back, or earlier if your first application is older (up to a year).
+  const first = [...byDay.keys()].sort()[0];
+  let start = new Date(today.getTime() - 25 * 7 * DAY);
+  if (first) { const f = new Date(`${first}T00:00:00`); if (f < start) start = new Date(Math.max(f.getTime(), today.getTime() - 52 * 7 * DAY)); }
+  start.setDate(start.getDate() - start.getDay());
+  const max = Math.max(1, ...[...byDay.values()].map(v => v.length));
+  const level = n => (n === 0 ? 0 : n >= max * 0.75 ? 4 : n >= max * 0.5 ? 3 : n >= max * 0.25 ? 2 : 1);
+  const cols = [];
+  const months = [];
+  let total = 0, best = { n: 0, d: '' };
+  for (let w = new Date(start); w <= today; w = new Date(w.getTime() + 7 * DAY)) {
+    const cells = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(w.getTime() + i * DAY);
+      if (d > today) { cells.push('<i class="hc out"></i>'); continue; }
+      const k = key(d), list = byDay.get(k) || [];
+      total += list.length;
+      if (list.length > best.n) best = { n: list.length, d: k };
+      const label = `${list.length || 'No'} application${list.length === 1 ? '' : 's'} on ${d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}${list.length ? `: ${list.map(a => a.company).join(', ')}` : ''}`;
+      cells.push(`<i class="hc l${level(list.length)}" title="${esc(label)}" aria-label="${esc(label)}"></i>`);
+      if (d.getDate() === 1 || (w.getTime() === start.getTime() && i === 0)) months.push({ col: cols.length, name: d.toLocaleDateString([], { month: 'short' }) });
+    }
+    cols.push(`<div class="hcol">${cells.join('')}</div>`);
+  }
+  // Current streak of days in a row with at least one application, ending today or yesterday.
+  let streak = 0;
+  for (let d = new Date(today); ; d = new Date(d.getTime() - DAY)) {
+    if (byDay.has(key(d))) streak++;
+    else if (streak === 0 && d.getTime() === today.getTime()) continue;
+    else break;
+  }
+  const monthRow = months.map(m => `<span style="grid-column:${m.col + 1}">${esc(m.name)}</span>`).join('');
+  setTimeout(() => document.querySelectorAll('.heat-scroll').forEach(e => { e.scrollLeft = e.scrollWidth; }), 0);
+  return `<div class="panel heat"><h3>Applications per day</h3>
+    <div class="heat-scroll"><div class="heat-grid" style="--cols:${cols.length}">
+      <div class="hmonths">${monthRow}</div>
+      <div class="hdays"><span></span><span>Mon</span><span></span><span>Wed</span><span></span><span>Fri</span><span></span></div>
+      <div class="hcols">${cols.join('')}</div>
+    </div></div>
+    <div class="heat-foot"><span class="meta">${esc(total)} in this period · best day ${best.n ? `${esc(best.n)} (${esc(new Date(`${best.d}T00:00:00`).toLocaleDateString([], { month: 'short', day: 'numeric' }))})` : '-'} · current streak ${esc(streak)} day${streak === 1 ? '' : 's'}</span>
+      <span class="hlegend meta">Less <i class="hc l0"></i><i class="hc l1"></i><i class="hc l2"></i><i class="hc l3"></i><i class="hc l4"></i> More</span></div>
+  </div>`;
+}
+
 function viewSummary() {
   const apps = S.data.applications.items;
   const by = key => apps.reduce((m, a) => ((m[a[key] || 'Unknown'] = (m[a[key] || 'Unknown'] || 0) + 1), m), {});
@@ -511,6 +566,7 @@ function viewSummary() {
       ${kpi(apps.length ? Math.round((responded / apps.length) * 100) + '%' : '-', 'Heard back', 'hv')}
       ${kpi(pipe.filter(j => pipeStatus(j.id) === 'New').length, 'New in pipeline', null)}
     </div>
+    ${heatmap(apps)}
     <div class="panels">
       <div class="panel"><h3>Applications per week</h3><div class="weeks">${weeks.map(w => `<div><b>${w.n || ''}</b><span class="b" style="height:${(w.n / wmax) * 100}%"></span>${w.start.getMonth() + 1}/${w.start.getDate()}</div>`).join('')}</div></div>
       <div class="panel"><h3>By stage</h3>${bars(by('stage'), k => STAGE_WIRE[k], stageOrder.length ? stageOrder.concat(Object.keys(by('stage')).filter(k => !stageOrder.includes(k))) : null)}</div>
