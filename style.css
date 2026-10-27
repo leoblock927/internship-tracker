@@ -178,6 +178,19 @@ td .sub { color: var(--ink-soft); font-size: .84rem; }
 .hc.l2 { background: color-mix(in srgb, var(--can) 60%, var(--board-2)); }
 .hc.l3 { background: color-mix(in srgb, var(--can) 82%, var(--board-2)); }
 .hc.l4 { background: var(--can); }
+.hc[data-day] { cursor: pointer; }
+.hc[data-day]:hover, .hc[data-day]:focus-visible { outline: 2px solid var(--ink); outline-offset: 0; }
+.heatpop { position: fixed; z-index: 50; width: min(340px, calc(100vw - 16px)); max-height: 60vh; overflow: auto; background: var(--panel); color: var(--ink);
+  border: 1.5px solid var(--ink); border-radius: var(--radius); box-shadow: 0 10px 30px rgba(0,0,0,.25); padding: 10px 12px; font-size: .88rem; }
+.heatpop .hp-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; }
+.heatpop .hp-head .meta { width: 100%; margin: 0; font-size: .8rem; }
+.heatpop ul { list-style: none; margin: 8px 0 0; padding: 0; }
+.heatpop li { padding: 7px 0; border-top: 1px solid var(--rule); display: flex; flex-direction: column; gap: 4px; }
+.heatpop li .meta { display: block; margin: 0; font-size: .8rem; }
+.heatpop .hp-links { display: flex; align-items: center; gap: 10px; font-size: .82rem; }
+.heatpop .hp-links a { color: var(--auto); font-weight: 600; text-decoration: none; }
+.heatpop .hp-links a:hover { text-decoration: underline; }
+.heatpop .hp-stage { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--wire, var(--ink-soft)); border: 1px solid currentColor; border-radius: 3px; padding: 0 5px; }
 .heat-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
 .hlegend { display: inline-flex; align-items: center; gap: 3px; font-size: .78rem; }
 .hlegend .hc { width: 11px; height: 11px; }

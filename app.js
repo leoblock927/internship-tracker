@@ -473,6 +473,64 @@ function viewWaiting() {
   }).join('')}</div>`;
 }
 
+// Pop-up for the day grid: shows up right away on hover (or tap on a phone) and lists that day's applications with links.
+let HEAT_DAYS = new Map();
+let heatHide = null, heatPinned = null;
+function postingUrl(a) {
+  if (/^https?:\/\//.test(a.url || '')) return a.url;
+  const n = x => String(x || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').trim();
+  const words = x => new Set(n(x).split(/\s+/).filter(w => w.length > 2 && !['intern', 'internship', 'summer', '2027', 'the', 'and'].includes(w)));
+  const A = words(a.role);
+  const job = (S.data.pipeline?.items || []).filter(j => n(j.company) === n(a.company))
+    .map(j => ({ j, hit: [...words(j.title)].filter(w => A.has(w)).length }))
+    .sort((x, y) => y.hit - x.hit)[0];
+  return job && (job.hit > 0 || /not named/i.test(a.role || '')) ? job.j.url : '';
+}
+function heatPop() {
+  let pop = document.getElementById('heatpop');
+  if (!pop) {
+    pop = document.createElement('div');
+    pop.id = 'heatpop'; pop.className = 'heatpop'; pop.setAttribute('role', 'dialog'); pop.hidden = true;
+    pop.addEventListener('pointerenter', () => clearTimeout(heatHide));
+    pop.addEventListener('pointerleave', () => { if (!heatPinned) heatHide = setTimeout(hideHeat, 150); });
+    document.body.appendChild(pop);
+  }
+  return pop;
+}
+function hideHeat() { const pop = document.getElementById('heatpop'); if (pop) pop.hidden = true; heatPinned = null; }
+function showHeat(cell) {
+  clearTimeout(heatHide);
+  const day = cell.dataset.day, list = HEAT_DAYS.get(day) || [];
+  const pop = heatPop();
+  const date = new Date(`${day}T00:00:00`).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  const companies = new Set(list.map(a => a.company)).size;
+  pop.innerHTML = `<div class="hp-head"><b>${esc(list.length || 'No')} application${list.length === 1 ? '' : 's'}</b>${list.length ? ` · ${esc(companies)} compan${companies === 1 ? 'y' : 'ies'}` : ''}<span class="meta">${esc(date)}</span></div>`
+    + (list.length ? `<ul>${list.map(a => {
+      const url = postingUrl(a);
+      return `<li><div><b>${esc(a.company)}</b><span class="meta">${esc(a.role || '')}</span></div>
+        <div class="hp-links"><span class="hp-stage" style="--wire:${wireVar(appWire(a))}">${esc(a.status === 'Rejected' ? 'Rejected' : a.stage || 'Applied')}</span>
+        ${url ? `<a href="${esc(safeUrl(url))}" target="_blank" rel="noopener">Posting ↗</a>` : ''}
+        <a href="#" data-act="app-edit" data-id="${esc(a.id)}">Details</a></div></li>`;
+    }).join('')}</ul>` : '');
+  pop.hidden = false;
+  const r = cell.getBoundingClientRect(), pw = pop.offsetWidth, ph = pop.offsetHeight;
+  let left = Math.min(Math.max(8, r.left + r.width / 2 - pw / 2), window.innerWidth - pw - 8);
+  let top = r.top - ph - 8;
+  if (top < 8) top = r.bottom + 8;
+  pop.style.left = `${left}px`; pop.style.top = `${Math.min(top, window.innerHeight - ph - 8)}px`;
+}
+document.addEventListener('pointerover', e => { const c = e.target.closest?.('.hc[data-day]'); if (c && !heatPinned) showHeat(c); });
+document.addEventListener('pointerout', e => { if (e.target.closest?.('.hc[data-day]') && !heatPinned) heatHide = setTimeout(hideHeat, 150); });
+document.addEventListener('click', e => {
+  const c = e.target.closest?.('.hc[data-day]');
+  if (c) { if (heatPinned === c) hideHeat(); else { heatPinned = null; showHeat(c); heatPinned = c; } return; }
+  if (!e.target.closest?.('#heatpop')) hideHeat();
+  else if (e.target.closest('[data-act="app-edit"]')) { e.preventDefault(); hideHeat(); }
+});
+document.addEventListener('focusin', e => { const c = e.target.closest?.('.hc[data-day]'); if (c) showHeat(c); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') hideHeat(); });
+window.addEventListener('scroll', () => { if (!heatPinned) hideHeat(); }, { passive: true });
+
 // GitHub-style grid: one square per day, darker green for more applications that day.
 function heatmap(apps) {
   const DAY = 86400000;
@@ -503,7 +561,7 @@ function heatmap(apps) {
       total += list.length;
       if (list.length > best.n) best = { n: list.length, d: k };
       const label = `${list.length || 'No'} application${list.length === 1 ? '' : 's'} on ${d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}${list.length ? `: ${list.map(a => a.company).join(', ')}` : ''}`;
-      cells.push(`<i class="hc l${level(list.length)}" title="${esc(label)}" aria-label="${esc(label)}"></i>`);
+      cells.push(`<i class="hc l${level(list.length)}" data-day="${k}" tabindex="${list.length ? 0 : -1}" aria-label="${esc(label)}"></i>`);
       if (d.getDate() === 1 || (w.getTime() === start.getTime() && i === 0)) months.push({ col: cols.length, name: d.toLocaleDateString([], { month: 'short' }) });
     }
     cols.push(`<div class="hcol">${cells.join('')}</div>`);
@@ -516,6 +574,7 @@ function heatmap(apps) {
     else break;
   }
   const monthRow = months.map(m => `<span style="grid-column:${m.col + 1}">${esc(m.name)}</span>`).join('');
+  HEAT_DAYS = byDay;
   setTimeout(() => document.querySelectorAll('.heat-scroll').forEach(e => { e.scrollLeft = e.scrollWidth; }), 0);
   return `<div class="panel heat"><h3>Applications per day</h3>
     <div class="heat-scroll"><div class="heat-grid" style="--cols:${cols.length}">
