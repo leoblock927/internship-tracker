@@ -590,7 +590,7 @@ function heatmap(apps) {
       if (list.length > best.n) best = { n: list.length, d: k };
       const label = `${list.length || 'No'} application${list.length === 1 ? '' : 's'} on ${d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}${list.length ? `: ${list.map(a => a.company).join(', ')}` : ''}`;
       cells.push(`<i class="hc l${level(list.length)}" data-day="${k}" tabindex="${list.length ? 0 : -1}" aria-label="${esc(label)}"></i>`);
-      if (d.getDate() === 1 || (w.getTime() === start.getTime() && i === 0)) months.push({ col: cols.length, name: d.toLocaleDateString([], { month: 'short' }) });
+      if (d.getDate() === 1 || (w.getTime() === start.getTime() && i === 0)) { const m = { col: cols.length, name: d.toLocaleDateString([], { month: 'short' }) }; if (months.length && months[months.length - 1].col >= m.col - 2) months[months.length - 1] = m; else months.push(m); }
     }
     cols.push(`<div class="hcol">${cells.join('')}</div>`);
   }
@@ -653,8 +653,8 @@ function viewSummary() {
       ${kpi(apps.length ? Math.round((responded / apps.length) * 100) + '%' : '-', 'Heard back', 'hv')}
       ${kpi(pipe.filter(j => pipeStatus(j.id) === 'New').length, 'New in pipeline', null)}
     </div>
-    ${heatmap(apps)}
     <div class="panels">
+      ${heatmap(apps)}
       <div class="panel"><h3>Applications per week</h3><div class="weeks">${weeks.map(w => `<div><b>${w.n || ''}</b><span class="b" style="height:${(w.n / wmax) * 100}%"></span>${w.start.getMonth() + 1}/${w.start.getDate()}</div>`).join('')}</div></div>
       <div class="panel"><h3>By stage</h3>${bars(by('stage'), k => STAGE_WIRE[k], stageOrder.length ? stageOrder.concat(Object.keys(by('stage')).filter(k => !stageOrder.includes(k))) : null)}</div>
       <div class="panel"><h3>By industry</h3>${bars(by('industry'), () => 'auto')}</div>
