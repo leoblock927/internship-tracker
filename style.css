@@ -2,13 +2,13 @@
    black field, expanded uppercase Archivo headings, light Inter body, mono dates,
    hairline rules, square corners, glowing accent lines, green/blue gradient bands. */
 :root {
-  --board: #000; --board-2: #0c0c0c; --panel: #070707; --ink: #f2f2f2; --ink-soft: rgba(242,242,242,.6);
-  --faint: rgba(242,242,242,.3); --rule: rgba(242,242,242,.16); --dot: transparent; --tape: #1a1a1a;
+  --board: #161b20; --board-2: #232a31; --panel: #1c2228; --ink: #eef2f4; --ink-soft: rgba(238,242,244,.74);
+  --faint: rgba(238,242,244,.38); --rule: rgba(238,242,244,.17); --dot: transparent; --tape: #2a3239;
   --hv: #ff4f00; --can: #3ad08a; --batt: #ff4d5e; --auto: #2bace2; --mute: rgba(242,242,242,.35);
   --display: "Archivo", "Arial Black", sans-serif;
   --font: "Inter", "Helvetica Neue", Arial, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, monospace;
-  --grad: linear-gradient(180deg, #000 8%, #03161d 36%, #0a4a63 62%, #0f8a78 84%, #3ad08a 100%);
+  --grad: linear-gradient(180deg, #161b20 8%, #03161d 36%, #0a4a63 62%, #0f8a78 84%, #3ad08a 100%);
   --grad-x: linear-gradient(90deg, #0a4a63, #0f8a78 55%, #3ad08a);
   --ease: cubic-bezier(.77, 0, .175, 1);
   --radius: 0px;
@@ -24,8 +24,8 @@
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; background: var(--board); }
 body {
-  margin: 0; background: var(--board); color: var(--ink); font-family: var(--font); font-weight: 300;
-  font-size: 1rem; line-height: 1.5; -webkit-font-smoothing: antialiased; min-height: 100vh;
+  margin: 0; background: var(--board); color: var(--ink); font-family: var(--font); font-weight: 400;
+  font-size: 1rem; line-height: 1.55; -webkit-font-smoothing: antialiased; min-height: 100vh;
 }
 button, input, select, textarea { font: inherit; color: inherit; }
 b, strong { font-weight: 500; }
@@ -80,7 +80,7 @@ nav.tabs .count { color: var(--faint); margin-left: 6px; font-family: var(--mono
 .titleblock > div:last-child { border-right: 0; }
 .titleblock .k { font-size: 10.5px; color: rgba(242,242,242,.7); font-weight: 400; }
 .titleblock .v { font-weight: 800; font-size: 1.05rem; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.titleblock .v small { display: block; font-family: var(--font); font-stretch: 100%; text-transform: none; font-weight: 300; font-size: .82rem; color: rgba(242,242,242,.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.titleblock .v small { display: block; font-family: var(--font); font-stretch: 100%; text-transform: none; font-weight: 400; font-size: .82rem; color: rgba(242,242,242,.82); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .titleblock .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .titleblock .btn { background: rgba(0,0,0,.25); border-color: rgba(255,255,255,.4); color: #f2f2f2; }
 .titleblock .btn:hover { border-color: #fff; background: rgba(0,0,0,.45); color: #fff; }
@@ -114,7 +114,7 @@ nav.tabs .count { color: var(--faint); margin-left: 6px; font-family: var(--mono
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin: 34px 0 16px; }
 .toolbar h2 { position: relative; padding-top: 16px; font-size: clamp(1.8rem, 4vw, 3.4rem); font-weight: 800; letter-spacing: -.02em; margin: 0 auto 0 0; line-height: 1; }
 .toolbar h2::before { content: ""; position: absolute; left: 0; top: 0; width: 56px; height: 1px; background: var(--hv); box-shadow: 0 0 6px var(--hv), 0 0 14px var(--hv); }
-.toolbar h2 small { display: block; margin: 10px 0 0; font-family: var(--font); font-stretch: 100%; text-transform: none; font-size: .9rem; font-weight: 300; color: var(--ink-soft); letter-spacing: 0; }
+.toolbar h2 small { display: block; margin: 10px 0 0; font-family: var(--font); font-stretch: 100%; text-transform: none; font-size: .9rem; font-weight: 400; color: var(--ink-soft); letter-spacing: 0; }
 .search, .toolbar select, .field input, .field select, .field textarea {
   border: 1px solid var(--rule); background: var(--panel); border-radius: 0; padding: 7px 10px; min-width: 0; transition: border-color .2s;
 }
