@@ -1174,7 +1174,7 @@ document.addEventListener('input', e => {
   const s = $('#search'); if (s) { s.focus(); try { s.setSelectionRange(pos, pos); } catch { /* ignore */ } }
 });
 $('#theme').addEventListener('click', () => {
-  const dark = getComputedStyle(document.body).backgroundColor !== 'rgb(228, 234, 236)';
+  const dark = document.documentElement.dataset.theme !== 'light';
   S.prefs.theme = dark ? 'light' : 'dark'; savePrefs(); applyTheme();
 });
 $('#lockbtn').addEventListener('click', () => lock());
